@@ -269,18 +269,22 @@ class MasterServer:
         return None
 
     async def _send_job_assignment(self, client: Client, job: Job) -> None:
+        workdir = f"{self._config.get('job', {}).get('workdir_root', '/tmp/codex-jobs')}/{job.job_id}"
         message = {
             "type": "job.assign",
             "job_id": job.job_id,
             "prompt": job.prompt,
             "repositories": [repo.__dict__ for repo in job.repositories],
-            "workdir": f"/tmp/codex-jobs/{job.job_id}",
+            "workdir": workdir,
             "metadata": job.metadata,
             "requested_tags": job.requested_tags,
             "target_node_id": client.uid,
         }
         LOGGER.info("Dispatching job %s to node %s", job.job_id, client.uid)
         client.status = "busy"
+        job.status = JobStatus.RUNNING
+        job.target_node_id = client.uid
+        self._storage.update_job_status(job.job_id, JobStatus.RUNNING, result_summary="dispatched", log_path=None)
         await client.connection.send(json.dumps(message))
         self._update_node_record(client, status="busy")
 
@@ -544,6 +548,9 @@ class MasterServer:
                 "parse_mode": os.getenv("TELEGRAM_PARSE_MODE", ""),
                 "allowed_chats": os.getenv("TELEGRAM_ALLOWED_CHATS", ""),
             },
+            "job": {
+                "workdir_root": os.getenv("JOB_WORKDIR_ROOT", "/tmp/codex-jobs"),
+            },
             "notes": os.getenv("MASTER_NOTES", ""),
         }
         return config
@@ -621,11 +628,15 @@ class MasterServer:
         telegram_cfg["bot_token_masked"] = self._mask_secret(telegram_cfg["bot_token"])
         telegram_cfg["allowed_chats_list"] = self._split_csv(telegram_cfg["allowed_chats"])
 
+        job_cfg = dict(self._config.get("job", {}))
+        job_cfg.setdefault("workdir_root", "/tmp/codex-jobs")
+
         payload = {
             "master": master_cfg,
             "bridge": bridge_cfg,
             "slack": slack_cfg,
             "telegram": telegram_cfg,
+            "job": job_cfg,
             "notes": self._config.get("notes", ""),
             "updated_at": self._config_updated_at.isoformat(timespec="seconds"),
         }
@@ -792,6 +803,12 @@ class MasterServer:
             for key in ("bot_token", "parse_mode", "allowed_chats"):
                 if key in telegram_cfg:
                     target[key] = str(telegram_cfg[key]).strip()
+
+        job_cfg = data.get("job")
+        if isinstance(job_cfg, dict):
+            target = self._config.setdefault("job", {})
+            if "workdir_root" in job_cfg:
+                target["workdir_root"] = str(job_cfg["workdir_root"]).strip() or "/tmp/codex-jobs"
 
         if "notes" in data:
             self._config["notes"] = str(data["notes"]).strip()
