@@ -9,6 +9,9 @@
 | `POST` | `/api/jobs` | 새 작업 생성 |
 | `POST` | `/api/jobs/{job_id}/status` | 작업 상태 업데이트 (노드/브릿지에서 사용) |
 | `GET` | `/api/nodes` | 등록된 노드 메타데이터 조회 |
+| `GET` | `/api/jobs/{job_id}/logs` | 작업 실행 로그 조회 (`?limit`, `?after` 지원) |
+| `POST` | `/api/github/token` | 사용자 GitHub 액세스 토큰 저장 (OAuth 완료 후 콜백용) |
+| `GET` | `/api/github/repos` | 사용자 GitHub 레포 목록 조회 (`?user_id=`) |
 
 ### Create Job Request
 

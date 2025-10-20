@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS job_logs (
     message TEXT NOT NULL,
     PRIMARY KEY (job_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS user_tokens (
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    expires_at TEXT,
+    metadata TEXT,
+    PRIMARY KEY (user_id, provider)
+);
 """
 
 
@@ -222,6 +232,48 @@ class Storage:
         params.append(limit)
         rows = self._conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
+
+    def set_user_token(
+        self,
+        user_id: str,
+        provider: str,
+        *,
+        access_token: str,
+        refresh_token: str | None = None,
+        expires_at: datetime | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        payload = {
+            "user_id": user_id,
+            "provider": provider,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "metadata": json.dumps(metadata or {}),
+        }
+        sql = """
+        INSERT INTO user_tokens (user_id, provider, access_token, refresh_token, expires_at, metadata)
+        VALUES (:user_id, :provider, :access_token, :refresh_token, :expires_at, :metadata)
+        ON CONFLICT(user_id, provider) DO UPDATE SET
+            access_token=excluded.access_token,
+            refresh_token=excluded.refresh_token,
+            expires_at=excluded.expires_at,
+            metadata=excluded.metadata
+        """
+        with self._conn:
+            self._conn.execute(sql, payload)
+
+    def get_user_token(self, user_id: str, provider: str) -> dict[str, object] | None:
+        row = self._conn.execute(
+            "SELECT * FROM user_tokens WHERE user_id=? AND provider=?",
+            (user_id, provider),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        metadata_raw = data.get("metadata")
+        data["metadata"] = json.loads(metadata_raw) if metadata_raw else {}
+        return data
 
     def dequeue_pending_job(self, candidate_node_id: str | None) -> Job | None:
         sql = "SELECT * FROM jobs WHERE status=? ORDER BY datetime(created_at) ASC LIMIT 1"

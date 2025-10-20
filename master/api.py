@@ -24,6 +24,8 @@ class ApiHandler:
             web.post("/api/jobs/{job_id}/status", self.update_job_status),
             web.get("/api/jobs/{job_id}/logs", self.list_job_logs),
             web.get("/api/nodes", self.list_nodes),
+            web.post("/api/github/token", self.set_github_token),
+            web.get("/api/github/repos", self.list_github_repos),
         )
 
     async def list_jobs(self, request: web.Request) -> web.Response:
@@ -125,6 +127,66 @@ class ApiHandler:
         after_value = int(after_seq) if after_seq is not None else None
         logs = self._storage.list_job_logs(job_id, limit=limit, after_seq=after_value)
         return web.json_response({"logs": logs})
+
+    async def set_github_token(self, request: web.Request) -> web.Response:
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            raise web.HTTPBadRequest(text="invalid json") from None
+
+        user_id = str(data.get("user_id", "")).strip()
+        token = str(data.get("access_token", "")).strip()
+        if not user_id or not token:
+            raise web.HTTPBadRequest(text="user_id and access_token are required")
+
+        refresh_token = data.get("refresh_token")
+        expires_at_raw = data.get("expires_at")
+        expires_at = None
+        if expires_at_raw:
+            try:
+                expires_at = datetime.fromisoformat(str(expires_at_raw))
+            except ValueError:
+                pass
+
+        metadata = {
+            "scope": data.get("scope"),
+            "token_type": data.get("token_type"),
+        }
+        self._storage.set_user_token(
+            user_id,
+            "github",
+            access_token=token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            metadata=metadata,
+        )
+        return web.json_response({"status": "ok"})
+
+    async def list_github_repos(self, request: web.Request) -> web.Response:
+        user_id = request.query.get("user_id")
+        if not user_id:
+            raise web.HTTPBadRequest(text="user_id query parameter required")
+
+        token_entry = self._storage.get_user_token(user_id, "github")
+        if token_entry is None:
+            raise web.HTTPUnauthorized(text="GitHub token not found for user")
+
+        # TODO: 실제 GitHub API 호출로 대체
+        placeholder_repos = [
+            {
+                "name": "example-repo",
+                "full_name": f"{user_id}/example-repo",
+                "url": "https://github.com/example/example-repo",
+                "default_branch": "main",
+            },
+            {
+                "name": "codex-tasks",
+                "full_name": f"{user_id}/codex-tasks",
+                "url": "https://github.com/example/codex-tasks",
+                "default_branch": "main",
+            },
+        ]
+        return web.json_response({"repos": placeholder_repos})
 
     def _job_to_dict(self, job: Job) -> dict[str, Any]:
         return {

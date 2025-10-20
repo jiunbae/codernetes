@@ -49,3 +49,8 @@ Codex Master는 "노드 배치 + GitHub 레포지토리 선택 + 프롬프트 �
 3. 노드 에이전트에 대한 실행 환경(컨테이너/가상환경) 요구사항을 문서화합니다.
 
 페이즈별 우선순위나 범위를 조정하고 싶으시면 알려주세요.
+
+## Phase 3 - 진행상황
+- [x] Job 로그/상세 뷰어 UI 및 `/api/jobs/{id}/logs` REST API 구현
+- [ ] GitHub OAuth 기반 레포 선택 UX
+- [ ] Slack/Telegram 명령 → Job 생성 연동 및 알림 파이프라인
