@@ -609,7 +609,7 @@ class MasterServer:
     async def _send_platform_message(self, client: Client, target: dict[str, Any] | None, text: str) -> None:
         if not target:
             return
-        payload = json.dumps({"target": target, "text": text})
+        payload = {"target": target, "text": text}
         message = self._build_message_payload(payload, sender=None)
         try:
             await client.connection.send(json.dumps(message))
