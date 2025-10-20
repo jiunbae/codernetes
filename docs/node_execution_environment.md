@@ -4,12 +4,13 @@
 - 기본 루트: `/var/codex-jobs/<job-id>/`
 - 레포지토리별 경로: `<job-root>/<repo-name>` (Git 클론)
 - 산출물/로그: `<job-root>/logs/` (표준 로그 파일), `<job-root>/artifacts/`
-- 작업 종료 후 TTL(예: 24시간) 경과 시 자동 정리
+- `node/client.py` 실행 시 `--workdir-root`로 기본 경로를 지정하며, `--cleanup-delay` 옵션으로 작업 완료 후 자동 정리(초 단위)를 설정할 수 있습니다. `--preserve-workdir`를 사용하면 디렉터리를 유지합니다.
 
 ## 권한/격리
 - 각 Job은 전용 OS 사용자(`codex-job-<id>`) 또는 컨테이너에서 실행하여 권한 격리
 - 네트워크 액세스는 최소화 (필요 시 allow-list)
 - GitHub credential은 환경 변수/credential helper로 주입 후 작업 종료 시 파기
+- 노드 클라이언트는 `--github-token-file` 또는 `--github-token` 옵션을 통해 토큰을 읽어 HTTPS clone 시 자동으로 주입하며, 로그에는 마스킹된 URL만 출력합니다.
 
 ## 실행 순서
 1. 작업 디렉터리 생성 (`mkdir -p /var/codex-jobs/<job-id>`)
@@ -27,6 +28,7 @@
 ## 모니터링/리소스 제한
 - CPU/RAM/GPU 제한: cgroup 혹은 컨테이너 런타임 활용
 - Job 실행 시간 타임아웃 (예: 30분 기본) 초과 시 자동 중단 + 실패 처리
+- `--cleanup-delay` 옵션으로 디렉터리 정리 시간을 제어할 수 있으며, 기본값 0초는 완료 직후 삭제를 시도합니다.
 - 로컬 로그 및 시스템 메트릭은 마스터/관측 도구(Prometheus, Loki 등)에 노출
 
 ## 오류 처리

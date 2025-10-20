@@ -28,6 +28,9 @@ class NodeContext:
     tags: list[str]
     workdir_root: Path
     codex_command: list[str]
+    github_token: str | None
+    preserve_workdir: bool
+    cleanup_delay: float
     client_id: str | None = None
     metadata_sent: bool = False
     active_job_id: str | None = None
@@ -170,7 +173,6 @@ async def _execute_job(websocket, context: NodeContext, payload: dict[str, objec
                     "job_id": job_id,
                     "status": "succeeded",
                     "result_summary": "job completed successfully",
-                    "log_path": str(context.current_log_path),
                 }
             )
         )
@@ -190,6 +192,8 @@ async def _execute_job(websocket, context: NodeContext, payload: dict[str, objec
         await _send_job_log(websocket, job_id, f"오류: {exc}", level="error", context=context)
     finally:
         context.mark_idle()
+        if not context.preserve_workdir:
+            asyncio.create_task(_cleanup_workdir(workdir, context.cleanup_delay))
 
 
 async def _send_job_log(
@@ -228,7 +232,10 @@ async def _clone_repository(
     cmd = ["git", "clone", "--depth", "1"]
     if branch:
         cmd += ["--branch", str(branch)]
-    cmd += [url, str(target)]
+    clone_url = _inject_token(url, context.github_token)
+    masked_url = _mask_token(clone_url, context.github_token)
+    await _send_job_log(websocket, job_id, f"git clone {masked_url}", context=context)
+    cmd += [clone_url, str(target)]
     return await _run_command(websocket, job_id, cmd, cwd=workdir, context=context)
 
 
@@ -241,6 +248,25 @@ def _derive_repo_name(url: str) -> str:
     return name or "repository"
 
 
+def _inject_token(url: str, token: str | None) -> str:
+    if not token:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in {"https"}:
+        return url
+    safe_token = token.replace("@", "%40")
+    netloc = f"{safe_token}@{parsed.hostname}"
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return parsed._replace(netloc=netloc).geturl()
+
+
+def _mask_token(url: str, token: str | None) -> str:
+    if not token:
+        return url
+    return url.replace(token, "****")
+
+
 async def _run_command(
     websocket,
     job_id: str,
@@ -250,7 +276,10 @@ async def _run_command(
     env: dict[str, str] | None = None,
     context: NodeContext | None = None,
 ) -> bool:
-    await _send_job_log(websocket, job_id, f"명령 실행: {' '.join(cmd)}", context=context)
+    display_cmd = ' '.join(cmd)
+    if context and context.github_token:
+        display_cmd = display_cmd.replace(context.github_token, "****")
+    await _send_job_log(websocket, job_id, f"명령 실행: {display_cmd}", context=context)
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -278,6 +307,16 @@ async def _run_command(
     return return_code == 0
 
 
+async def _cleanup_workdir(workdir: Path, delay: float) -> None:
+    try:
+        if delay > 0:
+            await asyncio.sleep(delay)
+        shutil.rmtree(workdir, ignore_errors=True)
+        LOGGER.info("작업 디렉터리를 정리했습니다: %s", workdir)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("작업 디렉터리 정리 실패(%s): %s", workdir, exc)
+
+
 async def _sender(websocket) -> None:
     loop = asyncio.get_running_loop()
     while True:
@@ -303,11 +342,22 @@ async def _run_client(
     tags: list[str],
     workdir_root: Path,
     codex_command: list[str],
+    github_token: str | None,
+    preserve_workdir: bool,
+    cleanup_delay: float,
 ) -> None:
     uri = f"ws://{host}:{port}"
     LOGGER.info("Connecting to %s", uri)
     workdir_root.mkdir(parents=True, exist_ok=True)
-    context = NodeContext(display_name=display_name, tags=tags, workdir_root=workdir_root, codex_command=codex_command)
+    context = NodeContext(
+        display_name=display_name,
+        tags=tags,
+        workdir_root=workdir_root,
+        codex_command=codex_command,
+        github_token=github_token,
+        preserve_workdir=preserve_workdir,
+        cleanup_delay=cleanup_delay,
+    )
     async with websockets.connect(uri) as websocket:
         receiver = asyncio.create_task(_receiver(websocket, context))
         sender = asyncio.create_task(_sender(websocket))
@@ -347,6 +397,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="",
         help="Codex 실행 명령 (예: 'python -m codex run')",
     )
+    parser.add_argument(
+        "--github-token",
+        default=None,
+        help="GitHub 토큰 값 (환경 변수 사용 권장)",
+    )
+    parser.add_argument(
+        "--github-token-file",
+        default=None,
+        help="GitHub 토큰이 저장된 파일 경로",
+    )
+    parser.add_argument(
+        "--preserve-workdir",
+        action="store_true",
+        help="작업 완료 후 디렉터리를 삭제하지 않습니다.",
+    )
+    parser.add_argument(
+        "--cleanup-delay",
+        type=float,
+        default=0.0,
+        help="작업 완료 후 디렉터리 삭제까지 지연할 시간(초). preserve-workdir 사용 시 무시",
+    )
     return parser.parse_args(argv)
 
 
@@ -360,6 +431,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     _configure_logging(args.verbose)
     try:
         tag_list = [tag.strip() for tag in str(args.tags).split(",") if tag.strip()]
+        github_token = None
+        if args.github_token_file:
+            try:
+                github_token = Path(args.github_token_file).read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                LOGGER.error("GitHub 토큰 파일을 읽을 수 없습니다: %s", exc)
+        if not github_token and args.github_token:
+            github_token = args.github_token.strip()
+
         codex_command = shlex.split(args.codex_command) if args.codex_command else []
         asyncio.run(
             _run_client(
@@ -369,6 +449,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 tags=tag_list,
                 workdir_root=Path(args.workdir_root).expanduser(),
                 codex_command=codex_command,
+                github_token=github_token,
+                preserve_workdir=bool(args.preserve_workdir),
+                cleanup_delay=max(0.0, float(args.cleanup_delay)),
             )
         )
     except KeyboardInterrupt:
