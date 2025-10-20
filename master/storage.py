@@ -6,7 +6,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from .models import Job, JobStatus, NodeMetadata, RepositorySpec
 
@@ -34,6 +34,15 @@ CREATE TABLE IF NOT EXISTS nodes (
     status TEXT NOT NULL,
     last_seen TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS job_logs (
+    job_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    timestamp TEXT NOT NULL,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    PRIMARY KEY (job_id, seq)
+);
 """
 
 
@@ -46,6 +55,7 @@ class Storage:
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
         self._bootstrap()
+        self._log_seq_cache: dict[str, int] = {}
 
     def close(self) -> None:
         self._conn.close()
@@ -178,6 +188,40 @@ class Storage:
                 ),
             )
         return cursor.rowcount > 0
+
+    # Job logs ------------------------------------------------------------
+
+    def append_job_log(self, job_id: str, level: str, message: str, timestamp: datetime | None = None) -> None:
+        seq = self._log_seq_cache.get(job_id)
+        if seq is None:
+            row = self._conn.execute("SELECT MAX(seq) FROM job_logs WHERE job_id=?", (job_id,)).fetchone()
+            seq = row[0] if row and row[0] is not None else 0
+        seq += 1
+        self._log_seq_cache[job_id] = seq
+        payload = {
+            "job_id": job_id,
+            "seq": seq,
+            "timestamp": (timestamp or datetime.utcnow()).isoformat(),
+            "level": level,
+            "message": message,
+        }
+        sql = """
+        INSERT INTO job_logs (job_id, seq, timestamp, level, message)
+        VALUES (:job_id, :seq, :timestamp, :level, :message)
+        """
+        with self._conn:
+            self._conn.execute(sql, payload)
+
+    def list_job_logs(self, job_id: str, *, limit: int = 200, after_seq: int | None = None) -> list[dict[str, str]]:
+        sql = "SELECT * FROM job_logs WHERE job_id=?"
+        params: list[object] = [job_id]
+        if after_seq is not None:
+            sql += " AND seq > ?"
+            params.append(after_seq)
+        sql += " ORDER BY seq ASC LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
 
     def dequeue_pending_job(self, candidate_node_id: str | None) -> Job | None:
         sql = "SELECT * FROM jobs WHERE status=? ORDER BY datetime(created_at) ASC LIMIT 1"

@@ -519,7 +519,7 @@ class MasterServer:
         job_id = payload.get("job_id", "unknown")
         level = str(payload.get("level", "info")).lower()
         message = payload.get("message", "")
-        log_message = "[job %s] %s", job_id, message
+        log_message = ("[job %s] %s", job_id, message)
         if level == "error":
             LOGGER.error(*log_message)
         elif level == "warning":

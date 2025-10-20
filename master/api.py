@@ -22,6 +22,7 @@ class ApiHandler:
             web.get("/api/jobs/{job_id}", self.get_job),
             web.post("/api/jobs", self.create_job),
             web.post("/api/jobs/{job_id}/status", self.update_job_status),
+            web.get("/api/jobs/{job_id}/logs", self.list_job_logs),
             web.get("/api/nodes", self.list_nodes),
         )
 
@@ -112,6 +113,18 @@ class ApiHandler:
             for node in nodes
         ]
         return web.json_response({"nodes": payload})
+
+    async def list_job_logs(self, request: web.Request) -> web.Response:
+        job_id = request.match_info["job_id"]
+        job = self._storage.get_job(job_id)
+        if job is None:
+            raise web.HTTPNotFound(text="job not found")
+
+        limit = min(int(request.query.get("limit", 200)), 1000)
+        after_seq = request.query.get("after")
+        after_value = int(after_seq) if after_seq is not None else None
+        logs = self._storage.list_job_logs(job_id, limit=limit, after_seq=after_value)
+        return web.json_response({"logs": logs})
 
     def _job_to_dict(self, job: Job) -> dict[str, Any]:
         return {

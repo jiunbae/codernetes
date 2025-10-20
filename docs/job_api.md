@@ -71,3 +71,32 @@
   "type": "job.assign",
   "job_id": "uuid",
   "prompt": "...",
+
+### 상태 보고 (Node → Master)
+
+```jsonc
+{
+  "type": "job.status",
+  "job_id": "uuid",
+  "status": "running|succeeded|failed",
+  "result_summary": "optional summary",
+  "error_message": null
+}
+```
+
+- `job.status` 수신 시 마스터는 `/api/jobs/{job_id}/status`와 동일한 로직으로 업데이트합니다.
+- 실패 시 `error_message` 필드를 포함합니다.
+- 별도로 전송되는 `job.log` 이벤트는 순차적으로 저장되며 `/api/jobs/{job_id}/logs` (옵션: `?limit=200`, `?after=10`) 엔드포인트를 통해 조회 가능합니다.
+
+### 로그 이벤트 (Node → Master)
+
+```jsonc
+{
+  "type": "job.log",
+  "job_id": "uuid",
+  "level": "info|error|warning",
+  "message": "stdout/stderr line"
+}
+```
+
+- 마스터는 로그를 영속화하고, UI는 REST 또는 추후 SSE 기반으로 스트리밍 받을 수 있습니다.
