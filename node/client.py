@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import asyncio.subprocess
+import contextlib
 import json
 import logging
+import os
+import shlex
+import shutil
 import sys
-import contextlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
+from urllib.parse import urlparse
 
 import websockets
 
@@ -20,8 +26,19 @@ LOGGER = logging.getLogger(__name__)
 class NodeContext:
     display_name: str | None
     tags: list[str]
+    workdir_root: Path
+    codex_command: list[str]
     client_id: str | None = None
     metadata_sent: bool = False
+    active_job_id: str | None = None
+    current_log_path: Path | None = None
+
+    def mark_busy(self, job_id: str) -> None:
+        self.active_job_id = job_id
+
+    def mark_idle(self) -> None:
+        self.active_job_id = None
+        self.current_log_path = None
 
 
 async def _receiver(websocket, context: NodeContext) -> None:
@@ -66,6 +83,20 @@ async def _handle_job_assign(websocket, context: NodeContext, payload: dict[str,
         LOGGER.warning("job.assign payload에 job_id가 없습니다: %s", payload)
         return
 
+    if context.active_job_id is not None:
+        LOGGER.warning("이미 작업이 실행 중입니다. 새로운 작업 %s 를 거절합니다.", job_id)
+        await websocket.send(
+            json.dumps(
+                {
+                    "type": "job.status",
+                    "job_id": job_id,
+                    "status": "failed",
+                    "error_message": "node is busy",
+                }
+            )
+        )
+        return
+
     prompt = payload.get("prompt", "")
     repositories = payload.get("repositories", [])
     print(f"[job {job_id}] 작업을 수신했습니다. 프롬프트: {prompt}")
@@ -73,39 +104,178 @@ async def _handle_job_assign(websocket, context: NodeContext, payload: dict[str,
         for repo in repositories:
             repo_url = repo.get("url") if isinstance(repo, dict) else repo
             print(f"  - repo: {repo_url}")
-
+    context.mark_busy(job_id)
     await websocket.send(
         json.dumps(
             {
                 "type": "job.status",
                 "job_id": job_id,
                 "status": "running",
-                "result_summary": "demo node acknowledged job",
+                "result_summary": "job started",
             }
         )
     )
 
+    asyncio.create_task(_execute_job(websocket, context, payload))
+
+
+async def _execute_job(websocket, context: NodeContext, payload: dict[str, object]) -> None:
+    job_id = str(payload.get("job_id"))
+    workdir = context.workdir_root / job_id
+    prompt = str(payload.get("prompt", ""))
+    repositories = payload.get("repositories", []) if isinstance(payload.get("repositories"), list) else []
+
+    try:
+        if workdir.exists():
+            shutil.rmtree(workdir)
+        workdir.mkdir(parents=True, exist_ok=True)
+        context.current_log_path = workdir / "job.log"
+        await _send_job_log(websocket, job_id, f"작업 디렉터리 생성: {workdir}", context=context)
+
+        prompt_path = workdir / "prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        await _send_job_log(websocket, job_id, "프롬프트 파일 저장 완료", context=context)
+
+        if repositories:
+            for repo_spec in repositories:
+                if not isinstance(repo_spec, dict):
+                    continue
+                url = str(repo_spec.get("url", "")).strip()
+                if not url:
+                    continue
+                branch = repo_spec.get("branch")
+                subdirectory = repo_spec.get("subdirectory")
+                await _send_job_log(websocket, job_id, f"레포지토리 클론: {url}", context=context)
+                ok = await _clone_repository(websocket, job_id, url, branch, workdir, context)
+                if not ok:
+                    raise RuntimeError(f"failed to clone {url}")
+                if subdirectory:
+                    await _send_job_log(websocket, job_id, f"서브디렉터리 지정: {subdirectory}", context=context)
+
+        if context.codex_command:
+            await _send_job_log(websocket, job_id, "Codex 명령 실행 시작", context=context)
+            env = os.environ.copy()
+            env["CODEX_PROMPT"] = prompt
+            env["CODEX_PROMPT_FILE"] = str(prompt_path)
+            success = await _run_command(websocket, job_id, context.codex_command, cwd=workdir, env=env, context=context)
+            if not success:
+                raise RuntimeError("codex command failed")
+        else:
+            await _send_job_log(websocket, job_id, "Codex 명령이 정의되지 않아 실행을 건너뜁니다.", context=context)
+
+        await websocket.send(
+            json.dumps(
+                {
+                    "type": "job.status",
+                    "job_id": job_id,
+                    "status": "succeeded",
+                    "result_summary": "job completed successfully",
+                    "log_path": str(context.current_log_path),
+                }
+            )
+        )
+        await _send_job_log(websocket, job_id, "작업 완료", level="info", context=context)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("Job %s 실행 중 오류", job_id)
+        await websocket.send(
+            json.dumps(
+                {
+                    "type": "job.status",
+                    "job_id": job_id,
+                    "status": "failed",
+                    "error_message": str(exc),
+                }
+            )
+        )
+        await _send_job_log(websocket, job_id, f"오류: {exc}", level="error", context=context)
+    finally:
+        context.mark_idle()
+
+
+async def _send_job_log(
+    websocket,
+    job_id: str,
+    message: str,
+    *,
+    level: str = "info",
+    context: NodeContext | None = None,
+) -> None:
+    if context and context.current_log_path is not None:
+        with context.current_log_path.open("a", encoding="utf-8") as fp:
+            fp.write(f"[{level}] {message}\n")
     await websocket.send(
         json.dumps(
             {
                 "type": "job.log",
                 "job_id": job_id,
-                "level": "info",
-                "message": "(demo) 작업을 즉시 완료합니다.",
+                "level": level,
+                "message": message,
             }
         )
     )
 
-    await websocket.send(
-        json.dumps(
-            {
-                "type": "job.status",
-                "job_id": job_id,
-                "status": "succeeded",
-                "result_summary": "Demo node completed job",
-            }
-        )
+
+async def _clone_repository(
+    websocket,
+    job_id: str,
+    url: str,
+    branch: str | None,
+    workdir: Path,
+    context: NodeContext,
+) -> bool:
+    repo_name = _derive_repo_name(url)
+    target = workdir / repo_name
+    cmd = ["git", "clone", "--depth", "1"]
+    if branch:
+        cmd += ["--branch", str(branch)]
+    cmd += [url, str(target)]
+    return await _run_command(websocket, job_id, cmd, cwd=workdir, context=context)
+
+
+def _derive_repo_name(url: str) -> str:
+    parsed = urlparse(url)
+    path = parsed.path or url
+    name = Path(path.rstrip("/")).name
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name or "repository"
+
+
+async def _run_command(
+    websocket,
+    job_id: str,
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    context: NodeContext | None = None,
+) -> bool:
+    await _send_job_log(websocket, job_id, f"명령 실행: {' '.join(cmd)}", context=context)
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(cwd),
+        env=env,
     )
+
+    async def _pipe(stream: asyncio.StreamReader, level: str) -> None:
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            await _send_job_log(
+                websocket,
+                job_id,
+                line.decode(errors="replace").rstrip(),
+                level=level,
+                context=context,
+            )
+
+    await asyncio.gather(_pipe(process.stdout, "info"), _pipe(process.stderr, "error"))
+    return_code = await process.wait()
+    await _send_job_log(websocket, job_id, f"명령 종료 코드: {return_code}", context=context)
+    return return_code == 0
 
 
 async def _sender(websocket) -> None:
@@ -125,10 +295,19 @@ async def _sender(websocket) -> None:
         await websocket.send(trimmed)
 
 
-async def _run_client(host: str, port: int, *, display_name: str | None, tags: list[str]) -> None:
+async def _run_client(
+    host: str,
+    port: int,
+    *,
+    display_name: str | None,
+    tags: list[str],
+    workdir_root: Path,
+    codex_command: list[str],
+) -> None:
     uri = f"ws://{host}:{port}"
     LOGGER.info("Connecting to %s", uri)
-    context = NodeContext(display_name=display_name, tags=tags)
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    context = NodeContext(display_name=display_name, tags=tags, workdir_root=workdir_root, codex_command=codex_command)
     async with websockets.connect(uri) as websocket:
         receiver = asyncio.create_task(_receiver(websocket, context))
         sender = asyncio.create_task(_sender(websocket))
@@ -158,6 +337,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="",
         help="노드 태그 목록(콤마 구분)",
     )
+    parser.add_argument(
+        "--workdir-root",
+        default="/tmp/codex-jobs",
+        help="작업 디렉터리 루트 경로",
+    )
+    parser.add_argument(
+        "--codex-command",
+        default="",
+        help="Codex 실행 명령 (예: 'python -m codex run')",
+    )
     return parser.parse_args(argv)
 
 
@@ -171,12 +360,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     _configure_logging(args.verbose)
     try:
         tag_list = [tag.strip() for tag in str(args.tags).split(",") if tag.strip()]
+        codex_command = shlex.split(args.codex_command) if args.codex_command else []
         asyncio.run(
             _run_client(
                 args.host,
                 args.port,
                 display_name=args.display_name,
                 tags=tag_list,
+                workdir_root=Path(args.workdir_root).expanduser(),
+                codex_command=codex_command,
             )
         )
     except KeyboardInterrupt:
