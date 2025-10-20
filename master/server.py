@@ -228,9 +228,11 @@ class MasterServer:
             job = self._select_job_for_client(client, jobs)
             if job is None:
                 continue
-            if job.status == JobStatus.PENDING:
-                self._storage.mark_job_queued(job.job_id, client.uid)
-                job.status = JobStatus.QUEUED
+            if job.status in {JobStatus.PENDING, JobStatus.QUEUED}:
+                assigned = self._storage.assign_job(job.job_id, client.uid)
+                if not assigned:
+                    continue
+                job.status = JobStatus.RUNNING
                 job.target_node_id = client.uid
 
             await self._send_job_assignment(client, job)
@@ -282,9 +284,6 @@ class MasterServer:
         }
         LOGGER.info("Dispatching job %s to node %s", job.job_id, client.uid)
         client.status = "busy"
-        job.status = JobStatus.RUNNING
-        job.target_node_id = client.uid
-        self._storage.update_job_status(job.job_id, JobStatus.RUNNING, result_summary="dispatched", log_path=None)
         await client.connection.send(json.dumps(message))
         self._update_node_record(client, status="busy")
 

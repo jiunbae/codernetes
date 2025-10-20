@@ -159,6 +159,26 @@ class Storage:
                 ),
             )
 
+    def assign_job(self, job_id: str, node_id: str) -> bool:
+        sql = """
+        UPDATE jobs
+        SET status = ?, target_node_id = ?, result_summary = ?
+        WHERE job_id = ? AND status IN (?, ?)
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                sql,
+                (
+                    JobStatus.RUNNING.value,
+                    node_id,
+                    "dispatched",
+                    job_id,
+                    JobStatus.PENDING.value,
+                    JobStatus.QUEUED.value,
+                ),
+            )
+        return cursor.rowcount > 0
+
     def dequeue_pending_job(self, candidate_node_id: str | None) -> Job | None:
         sql = "SELECT * FROM jobs WHERE status=? ORDER BY datetime(created_at) ASC LIMIT 1"
         row = self._conn.execute(sql, (JobStatus.QUEUED.value,)).fetchone()
