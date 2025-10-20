@@ -193,6 +193,7 @@ class SlackBridge(MasterBridge):
 
         thread_ts = event.get("thread_ts") or event.get("ts")
         user_profile = event.get("user_profile") or {}
+        command = self._parse_command(text)
         payload = {
             "type": "command",
             "source": {
@@ -205,6 +206,7 @@ class SlackBridge(MasterBridge):
                 or user_profile.get("real_name"),
             },
             "text": text,
+            "command": command,
             "raw_event": event,
         }
         await self._forward_to_master(payload)
@@ -237,3 +239,39 @@ class SlackBridge(MasterBridge):
         if channel_id.startswith("C"):
             return "channel"
         return "unknown"
+
+    def _parse_command(self, text: str) -> dict[str, Any]:
+        tokens = text.split()
+        repos = []
+        tags = []
+        target = None
+        prompt_tokens: list[str] = []
+        for token in tokens:
+            lower = token.lower()
+            if lower.startswith("repo=") or lower.startswith("repos="):
+                _, value = token.split("=", 1)
+                if value:
+                    repos.append({"url": value})
+                continue
+            if lower.startswith("repo:"):
+                _, value = token.split(":", 1)
+                if value:
+                    repos.append({"url": value})
+                continue
+            if lower.startswith("tags="):
+                _, value = token.split("=", 1)
+                tags.extend([tag.strip() for tag in value.split(",") if tag.strip()])
+                continue
+            if lower.startswith("target="):
+                _, value = token.split("=", 1)
+                target = value.strip()
+                continue
+            prompt_tokens.append(token)
+
+        prompt = " ".join(prompt_tokens).strip() or text
+        return {
+            "prompt": prompt,
+            "repositories": repos,
+            "requested_tags": tags,
+            "target_node_id": target,
+        }

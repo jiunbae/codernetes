@@ -156,6 +156,13 @@ export interface JobLogsResponse {
   logs: JobLogEntry[]
 }
 
+export interface GithubRepo {
+  name: string
+  full_name: string
+  url: string
+  default_branch?: string
+}
+
 export interface RegisteredNode {
   node_id: string
   display_name?: string | null

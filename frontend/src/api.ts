@@ -7,6 +7,7 @@ import type {
   JobsResponse,
   RegisteredNode,
   JobLogsResponse,
+  GithubRepo,
   RemoteActionRequest,
   RemoteActionResponse,
   RemoteCreateRequest,
@@ -118,4 +119,23 @@ export function fetchJobLogs(jobId: string, params?: { limit?: number; after?: n
   const query = searchParams.toString()
   const url = query ? `/api/jobs/${jobId}/logs?${query}` : `/api/jobs/${jobId}/logs`
   return request<JobLogsResponse>(url, { method: 'GET' })
+}
+
+export function saveGithubToken(payload: {
+  user_id: string
+  access_token: string
+  refresh_token?: string
+  expires_at?: string
+  scope?: string
+  token_type?: string
+}): Promise<{ status: string }> {
+  return request<{ status: string }>('/api/github/token', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchGithubRepos(userId: string): Promise<{ repos: GithubRepo[] }> {
+  const search = new URLSearchParams({ user_id: userId })
+  return request<{ repos: GithubRepo[] }>(`/api/github/repos?${search.toString()}`, { method: 'GET' })
 }

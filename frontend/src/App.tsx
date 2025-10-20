@@ -11,6 +11,8 @@ import {
   fetchRegisteredNodes,
   fetchRemotes,
   fetchStatus,
+  saveGithubToken,
+  fetchGithubRepos,
   removeRemote,
   sendToClient,
   updateConfig,
@@ -23,6 +25,7 @@ import type {
   Feedback,
   Job,
   JobLogEntry,
+  GithubRepo,
   JobFormState,
   RemoteFormState,
   RemoteNode,
@@ -157,6 +160,14 @@ function App() {
 
   const [registeredNodes, setRegisteredNodes] = useState<RegisteredNode[]>([])
   const [nodesError, setNodesError] = useState<string | null>(null)
+
+  const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([])
+  const [githubUserId, setGithubUserId] = useState('')
+  const [githubAccessToken, setGithubAccessToken] = useState('')
+  const [githubRefreshToken, setGithubRefreshToken] = useState('')
+  const [githubExpiresAt, setGithubExpiresAt] = useState('')
+  const [githubFeedback, setGithubFeedback] = useState<Feedback | null>(null)
+  const [githubLoading, setGithubLoading] = useState(false)
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [jobLogs, setJobLogs] = useState<JobLogEntry[]>([])
@@ -556,6 +567,66 @@ function App() {
       .finally(() => setJobLoading(false))
   }
 
+  function handleGithubSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!githubUserId.trim() || !githubAccessToken.trim()) {
+      setGithubFeedback({ type: 'error', message: 'user_id와 access_token을 입력하세요.' })
+      return
+    }
+    setGithubLoading(true)
+    setGithubFeedback(null)
+    saveGithubToken({
+      user_id: githubUserId.trim(),
+      access_token: githubAccessToken.trim(),
+      refresh_token: githubRefreshToken.trim() || undefined,
+      expires_at: githubExpiresAt.trim() || undefined,
+    })
+      .then(() => {
+        setGithubFeedback({ type: 'success', message: 'GitHub 토큰을 저장했습니다.' })
+      })
+      .catch((error) => {
+        setGithubFeedback({
+          type: 'error',
+          message: error instanceof Error ? error.message : '토큰 저장에 실패했습니다.',
+        })
+      })
+      .finally(() => setGithubLoading(false))
+  }
+
+  function handleFetchGithubRepos() {
+    if (!githubUserId.trim()) {
+      setGithubFeedback({ type: 'error', message: 'user_id를 입력하세요.' })
+      return
+    }
+    setGithubLoading(true)
+    setGithubFeedback(null)
+    fetchGithubRepos(githubUserId.trim())
+      .then((data) => {
+        setGithubRepos(data.repos)
+        setGithubFeedback({ type: 'success', message: `${data.repos.length}개 레포를 불러왔습니다.` })
+      })
+      .catch((error) => {
+        setGithubFeedback({
+          type: 'error',
+          message: error instanceof Error ? error.message : '레포 목록을 불러오지 못했습니다.',
+        })
+        setGithubRepos([])
+      })
+      .finally(() => setGithubLoading(false))
+  }
+
+  function handleAddRepository(url: string) {
+    setJobForm((prev) => {
+      const existing = prev.repositoryUrls.trim()
+      const entries = existing ? existing.split(/\r?\n/) : []
+      if (entries.includes(url)) {
+        return prev
+      }
+      const updated = existing ? `${existing}\n${url}` : url
+      return { ...prev, repositoryUrls: updated }
+    })
+  }
+
   function handleSelectJob(jobId: string) {
     setSelectedJobId((prev) => (prev === jobId ? prev : jobId))
   }
@@ -932,6 +1003,87 @@ function App() {
               </div>
             )}
           </form>
+        </section>
+
+        <section className="card">
+          <div className="card-heading">
+            <h2>GitHub 연결 (임시)</h2>
+            <span className="badge subtle">OAuth 준비</span>
+          </div>
+          <p className="description">
+            정식 OAuth 구현 전까지는 user_id와 access token을 직접 입력해 토큰을 저장합니다. 개발/테스트용으로만 사용하세요.
+          </p>
+          <form className="stacked-form" onSubmit={handleGithubSubmit}>
+            <label>
+              <span>사용자 ID</span>
+              <input
+                type="text"
+                value={githubUserId}
+                onChange={(event) => setGithubUserId(event.target.value)}
+                placeholder="예: slack:T123:U456"
+              />
+            </label>
+            <label>
+              <span>Access Token</span>
+              <input
+                type="password"
+                value={githubAccessToken}
+                onChange={(event) => setGithubAccessToken(event.target.value)}
+                placeholder="ghp_..."
+              />
+            </label>
+            <label>
+              <span>Refresh Token (선택)</span>
+              <input
+                type="text"
+                value={githubRefreshToken}
+                onChange={(event) => setGithubRefreshToken(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>만료 시각 (ISO8601)</span>
+              <input
+                type="text"
+                value={githubExpiresAt}
+                onChange={(event) => setGithubExpiresAt(event.target.value)}
+                placeholder="2025-10-20T12:34:56Z"
+              />
+            </label>
+            <div className="github-actions">
+              <button type="submit" disabled={githubLoading}>
+                토큰 저장
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={handleFetchGithubRepos}
+                disabled={githubLoading || !githubUserId.trim()}
+              >
+                레포 불러오기
+              </button>
+            </div>
+            {githubFeedback && (
+              <div className={`form-message ${githubFeedback.type}`}>{githubFeedback.message}</div>
+            )}
+          </form>
+
+          <div className="github-repo-list">
+            {githubRepos.length === 0 ? (
+              <div className="small-text">저장된 토큰으로 가져온 레포가 없습니다.</div>
+            ) : (
+              githubRepos.map((repo) => (
+                <div key={repo.full_name} className="github-repo-item">
+                  <div>
+                    <div className="remote-name">{repo.full_name}</div>
+                    <div className="small-text">기본 브랜치: {repo.default_branch || 'main'}</div>
+                  </div>
+                  <button type="button" className="ghost" onClick={() => handleAddRepository(repo.url)}>
+                    작업에 추가
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </section>
 
         <section className="card">

@@ -23,7 +23,7 @@ from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from .api import ApiHandler
-from .models import Job, JobStatus, NodeMetadata
+from .models import Job, JobStatus, NodeMetadata, RepositorySpec
 from .storage import Storage, init_storage
 
 LOGGER = logging.getLogger(__name__)
@@ -482,6 +482,9 @@ class MasterServer:
         if message_type == "node.hello":
             self._handle_node_hello_message(client, payload)
             return True
+        if message_type == "command":
+            asyncio.create_task(self._handle_command_message(client, payload))
+            return True
         return False
 
     def _handle_job_status_message(self, client: Client, payload: dict[str, Any]) -> None:
@@ -519,6 +522,7 @@ class MasterServer:
         job_id = payload.get("job_id", "unknown")
         level = str(payload.get("level", "info")).lower()
         message = payload.get("message", "")
+        self._storage.append_job_log(job_id, level, message)
         log_message = ("[job %s] %s", job_id, message)
         if level == "error":
             LOGGER.error(*log_message)
@@ -526,6 +530,111 @@ class MasterServer:
             LOGGER.warning(*log_message)
         else:
             LOGGER.info(*log_message)
+
+    async def _handle_command_message(self, client: Client, payload: dict[str, Any]) -> None:
+        source = payload.get("source") or {}
+        command_info = payload.get("command") or {}
+        text = str(payload.get("text", "")).strip()
+
+        prompt = command_info.get("prompt") if isinstance(command_info, dict) else None
+        if isinstance(prompt, str):
+            prompt = prompt.strip()
+        if not prompt:
+            prompt = text
+        if not prompt:
+            LOGGER.debug("Command ignored: empty prompt %s", payload)
+            await self._send_platform_message(client, self._command_target_from_source(source), "프롬프트가 비어 있어 작업을 생성하지 못했습니다.")
+            return
+
+        repositories_spec: list[RepositorySpec] = []
+        repositories = command_info.get("repositories") if isinstance(command_info, dict) else None
+        if isinstance(repositories, list):
+            for item in repositories:
+                url = ""
+                branch = None
+                subdirectory = None
+                if isinstance(item, str):
+                    url = item.strip()
+                elif isinstance(item, dict):
+                    url = str(item.get("url", "")).strip()
+                    branch = item.get("branch")
+                    subdirectory = item.get("subdirectory")
+                if not url:
+                    continue
+                repositories_spec.append(RepositorySpec(url=url, branch=branch, subdirectory=subdirectory))
+
+        requested_tags: list[str] = []
+        raw_tags = command_info.get("requested_tags") if isinstance(command_info, dict) else None
+        if isinstance(raw_tags, str):
+            requested_tags = [tag.strip() for tag in raw_tags.split(",") if tag.strip()]
+        elif isinstance(raw_tags, list):
+            requested_tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+
+        target_node_id = None
+        raw_target = command_info.get("target_node_id") if isinstance(command_info, dict) else None
+        if isinstance(raw_target, str):
+            raw_target = raw_target.strip()
+            if raw_target:
+                target_node_id = raw_target
+
+        job = Job(
+            job_id=str(uuid.uuid4()),
+            prompt=prompt,
+            created_at=datetime.utcnow(),
+            status=JobStatus.PENDING,
+            target_node_id=target_node_id,
+            requested_tags=requested_tags,
+            repositories=repositories_spec,
+            metadata={
+                "origin": f"command:{source.get('platform', 'unknown')}",
+                "source": source,
+                "raw_text": text,
+            },
+        )
+        self._storage.upsert_job(job)
+        LOGGER.info(
+            "Command created job %s (platform=%s, user=%s)",
+            job.job_id,
+            source.get("platform"),
+            source.get("user") or source.get("user_id"),
+        )
+
+        ack_target = self._command_target_from_source(source)
+        if ack_target is not None:
+            ack_message = f"작업 {job.job_id} 생성 ({job.status.value})"
+            await self._send_platform_message(client, ack_target, ack_message)
+
+        asyncio.create_task(self._dispatch_jobs_once())
+
+    async def _send_platform_message(self, client: Client, target: dict[str, Any] | None, text: str) -> None:
+        if not target:
+            return
+        payload = json.dumps({"target": target, "text": text})
+        message = self._build_message_payload(payload, sender=None)
+        try:
+            await client.connection.send(json.dumps(message))
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Failed to send platform message: %s", exc)
+
+    def _command_target_from_source(self, source: dict[str, Any]) -> dict[str, Any] | None:
+        platform = source.get("platform")
+        if platform == "slack":
+            channel = source.get("channel")
+            if not channel:
+                return None
+            target: dict[str, Any] = {"platform": "slack", "channel": channel}
+            if source.get("thread_ts"):
+                target["thread_ts"] = source["thread_ts"]
+            return target
+        if platform == "telegram":
+            chat_id = source.get("chat_id") or source.get("chat")
+            if not chat_id:
+                return None
+            target = {"platform": "telegram", "chat_id": chat_id}
+            if source.get("message_thread_id"):
+                target["message_thread_id"] = source["message_thread_id"]
+            return target
+        return None
 
     def _handle_node_hello_message(self, client: Client, payload: dict[str, Any]) -> None:
         display_name = payload.get("display_name")

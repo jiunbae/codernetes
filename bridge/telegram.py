@@ -146,6 +146,7 @@ class TelegramBridge(MasterBridge):
                 "message_thread_id": message.get("message_thread_id"),
             },
             "text": text,
+            "command": self._parse_command(text),
             "raw_update": update,
         }
         try:
@@ -173,6 +174,42 @@ class TelegramBridge(MasterBridge):
         if thread_id is not None:
             data["message_thread_id"] = thread_id
         await self._telegram_request("sendMessage", json=data)
+
+    def _parse_command(self, text: str) -> dict[str, Any]:
+        tokens = text.split()
+        repos = []
+        tags = []
+        target = None
+        prompt_tokens: list[str] = []
+        for token in tokens:
+            lower = token.lower()
+            if lower.startswith("repo=") or lower.startswith("repos="):
+                _, value = token.split("=", 1)
+                if value:
+                    repos.append({"url": value})
+                continue
+            if lower.startswith("repo:"):
+                _, value = token.split(":", 1)
+                if value:
+                    repos.append({"url": value})
+                continue
+            if lower.startswith("tags="):
+                _, value = token.split("=", 1)
+                tags.extend([tag.strip() for tag in value.split(",") if tag.strip()])
+                continue
+            if lower.startswith("target="):
+                _, value = token.split("=", 1)
+                target = value.strip()
+                continue
+            prompt_tokens.append(token)
+
+        prompt = " ".join(prompt_tokens).strip() or text
+        return {
+            "prompt": prompt,
+            "repositories": repos,
+            "requested_tags": tags,
+            "target_node_id": target,
+        }
 
     async def _telegram_request(self, method: str, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None) -> Any:
         if self._session is None:
