@@ -199,7 +199,10 @@ class MasterServer:
         try:
             while True:
                 await asyncio.sleep(self._dispatch_interval)
-                await self._dispatch_jobs_once()
+                try:
+                    await self._dispatch_jobs_once()
+                except Exception:  # noqa: BLE001
+                    LOGGER.exception("Dispatcher: error while assigning jobs")
         except asyncio.CancelledError:
             LOGGER.debug("Job dispatcher stopped")
 
@@ -214,28 +217,48 @@ class MasterServer:
 
     async def _dispatch_jobs_once(self) -> None:
         if not self._clients:
+            LOGGER.debug("Dispatcher: no clients connected")
             return
 
         candidates = [client for client in self._clients.values() if self._is_client_available(client)]
         if not candidates:
+            LOGGER.debug("Dispatcher: no available clients")
             return
 
         jobs = self._storage.list_jobs_by_status([JobStatus.QUEUED, JobStatus.PENDING], limit=200)
         if not jobs:
+            LOGGER.debug("Dispatcher: no jobs to assign")
             return
+        LOGGER.debug(
+            "Dispatcher: %d job(s) pending/queued -> %s",
+            len(jobs),
+            [(job.job_id, job.status.value, job.target_node_id) for job in jobs],
+        )
 
         for client in candidates:
             job = self._select_job_for_client(client, jobs)
             if job is None:
+                LOGGER.debug("Dispatcher: no matching job for client %s", client.uid)
                 continue
             if job.status in {JobStatus.PENDING, JobStatus.QUEUED}:
                 assigned = self._storage.assign_job(job.job_id, client.uid)
                 if not assigned:
+                    LOGGER.debug("Dispatcher: job %s assign conflict", job.job_id)
                     continue
                 job.status = JobStatus.RUNNING
                 job.target_node_id = client.uid
+            elif job.status == JobStatus.RUNNING and job.target_node_id != client.uid:
+                LOGGER.debug("Dispatcher: job %s already running on %s", job.job_id, job.target_node_id)
+                continue
 
+            LOGGER.info("Dispatcher: assigning job %s to client %s", job.job_id, client.uid)
             await self._send_job_assignment(client, job)
+            self._storage.update_job_status(
+                job.job_id,
+                JobStatus.RUNNING,
+                result_summary="dispatched",
+                log_path=None,
+            )
             jobs = [j for j in jobs if j.job_id != job.job_id]
             if not jobs:
                 break
