@@ -7,6 +7,7 @@ import {
   createRemote,
   fetchConfig,
   fetchJobs,
+  fetchJobLogs,
   fetchRegisteredNodes,
   fetchRemotes,
   fetchStatus,
@@ -21,6 +22,7 @@ import type {
   ConfigPayload,
   Feedback,
   Job,
+  JobLogEntry,
   JobFormState,
   RemoteFormState,
   RemoteNode,
@@ -156,6 +158,12 @@ function App() {
   const [registeredNodes, setRegisteredNodes] = useState<RegisteredNode[]>([])
   const [nodesError, setNodesError] = useState<string | null>(null)
 
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [jobLogs, setJobLogs] = useState<JobLogEntry[]>([])
+  const [jobLogsError, setJobLogsError] = useState<string | null>(null)
+  const [jobLogsLoading, setJobLogsLoading] = useState(false)
+  const [jobLogsAfter, setJobLogsAfter] = useState<number | null>(null)
+
   const [clientMessages, setClientMessages] = useState<Record<string, string>>({})
   const [clientFeedbacks, setClientFeedbacks] = useState<Record<string, Feedback>>({})
   const [clientLoading, setClientLoading] = useState<Record<string, boolean>>({})
@@ -172,6 +180,14 @@ function App() {
       ),
     [jobs],
   )
+
+  const selectedJob = useMemo(() => jobs.find((job) => job.job_id === selectedJobId) ?? null, [jobs, selectedJobId])
+
+  useEffect(() => {
+    if (selectedJobId && !jobs.some((job) => job.job_id === selectedJobId)) {
+      setSelectedJobId(null)
+    }
+  }, [jobs, selectedJobId])
 
   useEffect(() => {
     loadStatus()
@@ -292,6 +308,70 @@ function App() {
       setJobsError(error instanceof Error ? error.message : '작업 목록을 불러오지 못했습니다.')
     }
   }
+
+  async function loadJobLogs(options?: { reset?: boolean }) {
+    if (!selectedJobId) return
+    const reset = options?.reset ?? false
+    const after = reset ? undefined : jobLogsAfter ?? undefined
+    setJobLogsLoading(true)
+    try {
+      const data = await fetchJobLogs(selectedJobId, { after, limit: 200 })
+      if (reset) {
+        setJobLogs([...data.logs].sort((a, b) => a.seq - b.seq))
+      } else {
+        setJobLogs((prev) => {
+          const merged = [...prev]
+          for (const log of data.logs) {
+            if (!merged.some((item) => item.seq === log.seq)) {
+              merged.push(log)
+            }
+          }
+          return merged.sort((a, b) => a.seq - b.seq)
+        })
+      }
+      if (data.logs.length > 0) {
+        const latest = data.logs[data.logs.length - 1]
+        setJobLogsAfter(latest.seq)
+      }
+      setJobLogsError(null)
+    } catch (error) {
+      setJobLogsError(error instanceof Error ? error.message : '로그를 불러오지 못했습니다.')
+      if (reset) {
+        setJobLogs([])
+        setJobLogsAfter(null)
+      }
+    } finally {
+      setJobLogsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setJobLogs([])
+      setJobLogsAfter(null)
+      setJobLogsError(null)
+      return
+    }
+    setJobLogs([])
+    setJobLogsAfter(null)
+    setJobLogsError(null)
+    loadJobLogs({ reset: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId])
+
+  useEffect(() => {
+    if (!selectedJobId) return
+    const status = selectedJob?.status
+    if (!status) return
+    if (['running', 'queued', 'pending'].includes(status)) {
+      const timer = window.setInterval(() => {
+        loadJobLogs({ reset: false })
+      }, 3000)
+      return () => window.clearInterval(timer)
+    }
+    loadJobLogs({ reset: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId, selectedJob?.status])
 
   async function loadRegisteredNodes() {
     try {
@@ -474,6 +554,10 @@ function App() {
         })
       })
       .finally(() => setJobLoading(false))
+  }
+
+  function handleSelectJob(jobId: string) {
+    setSelectedJobId((prev) => (prev === jobId ? prev : jobId))
   }
 
   function handleRemoteAction(remoteId: string, action: string) {
@@ -931,7 +1015,11 @@ function App() {
                 </tr>
               ) : (
                 sortedJobs.map((job) => (
-                  <tr key={job.job_id}>
+                  <tr
+                    key={job.job_id}
+                    className={`job-row${selectedJobId === job.job_id ? ' selected' : ''}`}
+                    onClick={() => handleSelectJob(job.job_id)}
+                  >
                     <td>
                       <div className="remote-name">{job.prompt}</div>
                       <div className="remote-id">
@@ -963,6 +1051,76 @@ function App() {
             </tbody>
           </table>
           {jobsError && <div className="form-message error">{jobsError}</div>}
+        </section>
+
+        <section className="card">
+          <div className="card-heading">
+            <h2>작업 상세</h2>
+            {selectedJob && (
+              <span className={JOB_STATUS_CLASSES[selectedJob.status] ?? 'badge subtle'}>
+                {JOB_STATUS_LABELS[selectedJob.status] ?? selectedJob.status}
+              </span>
+            )}
+          </div>
+          {selectedJob ? (
+            <>
+              <div className="job-detail-grid">
+                <div>
+                  <div className="small-text">작업 ID</div>
+                  <code>{selectedJob.job_id}</code>
+                </div>
+                <div>
+                  <div className="small-text">대상 노드</div>
+                  <span>{selectedJob.target_node_id || '자동'}</span>
+                </div>
+                <div>
+                  <div className="small-text">생성 시각</div>
+                  <span>{formatDate(selectedJob.created_at)}</span>
+                </div>
+                <div>
+                  <div className="small-text">완료 시각</div>
+                  <span>{formatDate(selectedJob.finished_at)}</span>
+                </div>
+              </div>
+              {selectedJob.result_summary && (
+                <div className="job-summary">
+                  <div className="small-text">결과 요약</div>
+                  <p>{selectedJob.result_summary}</p>
+                </div>
+              )}
+              {selectedJob.error_message && (
+                <div className="job-summary error">
+                  <div className="small-text">오류</div>
+                  <p>{selectedJob.error_message}</p>
+                </div>
+              )}
+              <div className="job-log-header">
+                <h3>실행 로그</h3>
+                <div className="job-log-actions">
+                  <button type="button" className="ghost" onClick={() => loadJobLogs({ reset: true })}>
+                    새로고침
+                  </button>
+                  {jobLogsLoading && <span className="small-text">불러오는 중...</span>}
+                </div>
+              </div>
+              {jobLogsError && <div className="form-message error">{jobLogsError}</div>}
+              <div className="job-log-window">
+                {jobLogs.length === 0 && !jobLogsLoading ? (
+                  <div className="small-text">로그가 없습니다.</div>
+                ) : (
+                  jobLogs.map((log) => (
+                    <div key={log.seq} className={`job-log-line level-${log.level}`}>
+                      <span className="timestamp">[{formatDate(log.timestamp)}]</span>
+                      <span className="level">[{log.level.toUpperCase()}]</span>
+                      <span className="message">{log.message}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="small-text">왼쪽 목록에서 작업을 선택하세요.</div>
+          )}
         </section>
 
         <section className="card">

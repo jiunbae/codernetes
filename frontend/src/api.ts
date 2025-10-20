@@ -6,6 +6,7 @@ import type {
   JobCreateRequest,
   JobsResponse,
   RegisteredNode,
+  JobLogsResponse,
   RemoteActionRequest,
   RemoteActionResponse,
   RemoteCreateRequest,
@@ -108,4 +109,13 @@ export function createJob(payload: JobCreateRequest): Promise<{ job: Job }> {
 
 export function fetchRegisteredNodes(): Promise<{ nodes: RegisteredNode[] }> {
   return request<{ nodes: RegisteredNode[] }>('/api/nodes', { method: 'GET' })
+}
+
+export function fetchJobLogs(jobId: string, params?: { limit?: number; after?: number }): Promise<JobLogsResponse> {
+  const searchParams = new URLSearchParams()
+  if (params?.limit) searchParams.set('limit', String(params.limit))
+  if (params?.after !== undefined) searchParams.set('after', String(params.after))
+  const query = searchParams.toString()
+  const url = query ? `/api/jobs/${jobId}/logs?${query}` : `/api/jobs/${jobId}/logs`
+  return request<JobLogsResponse>(url, { method: 'GET' })
 }

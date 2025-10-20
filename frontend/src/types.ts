@@ -144,6 +144,18 @@ export interface JobCreateRequest {
   origin?: string
 }
 
+export interface JobLogEntry {
+  job_id: string
+  seq: number
+  timestamp: string
+  level: string
+  message: string
+}
+
+export interface JobLogsResponse {
+  logs: JobLogEntry[]
+}
+
 export interface RegisteredNode {
   node_id: string
   display_name?: string | null

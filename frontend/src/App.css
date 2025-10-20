@@ -412,6 +412,81 @@ button.ghost.danger:hover {
   color: #dc2626;
 }
 
+.job-row {
+  cursor: pointer;
+}
+
+.job-row.selected {
+  background: #eff6ff;
+}
+
+.job-detail-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.job-summary {
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.job-summary.error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.job-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.job-log-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.job-log-window {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.job-log-line {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.job-log-line .timestamp {
+  color: #93c5fd;
+}
+
+.job-log-line .level {
+  color: #fcd34d;
+}
+
+.job-log-line.level-error .level {
+  color: #f87171;
+}
+
+.job-log-line.level-warning .level {
+  color: #fbbf24;
+}
+
 footer {
   margin-top: 2rem;
   font-size: 0.85rem;
