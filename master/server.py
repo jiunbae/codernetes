@@ -241,7 +241,8 @@ class MasterServer:
                 break
 
     def _is_client_available(self, client: Client) -> bool:
-        if client.connection.closed:
+        closed_attr = getattr(client.connection, "closed", None)
+        if isinstance(closed_attr, bool) and closed_attr:
             return False
         if client.status not in {"online"}:
             return False
