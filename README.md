@@ -1,4 +1,4 @@
-# Codernetes Super Client (Prototype)
+# Codernetes (Prototype)
 
 이 프로젝트는 소규모 팀을 위한 Codernetes 마스터/노드 메시지 허브 프로토타입입니다. 초기 목표는 마스터 프로세스가 여러 노드와 WebSocket으로 연결되어 간단한 텍스트 명령을 주고받을 수 있도록 하는 것입니다.
 

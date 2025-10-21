@@ -1,5 +1,5 @@
 [project]
-name = "codernetes-super-client"
+name = "codernetes"
 version = "0.1.0"
 description = "소규모 팀을 위한 Codernetes 마스터/노드 메시지 허브 프로토타입"
 authors = [{name = "June"}]

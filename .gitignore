@@ -1,0 +1,77 @@
+.codex
+
+### Project ###
+.env
+.env.test
+.env.dev
+.venv
+
+### mypy ###
+.dmypy.json
+
+### Intellij ###
+.idea
+
+### cursor ###
+.cursor/
+!.cursor/rules/*.mdc
+
+### macOS ###
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
+
+### Vim ###
+# Swap
+[._]*.s[a-v][a-z]
+!*.svg # comment out if you don't need vector files
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Session
+Session.vim
+Sessionx.vim
+
+# Temporary
+.netrwhist
+*~
+# Persistent undo
+[._]*.un~
+
+### VisualStudioCode ###
+.vscode/*
+
+### Python ###
+__pycache__/
+.coverage
+
+# Mypy
+.mypy_cache/
+
+# HTTP Clients
+http_clients/
+http/.http-dev.env
+http/.http-local.env
+http/http-client.private.env.json
+
+
+## Requiments Docker Volume
+local-requirements/tmp/
+local-requirements/*.sql
+local-requirements/.env
+local-requirements/.env.scheduler
+local-requirements/mysql_backups/
+
+## Audit Log
+audit.log
+
+src/callabo_server.egg-info/
+
+audit.log
+*.mmdb
+
+# audit log
+audit.log
