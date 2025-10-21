@@ -1,13 +1,13 @@
 # Slack/Telegram 명령 → Job 생성 설계
 
 ## 목표
-- 메신저 명령을 Codex Job 생성 흐름에 연결해 원격 명령 실행 자동화
+- 메신저 명령을 Codernetes Job 생성 흐름에 연결해 원격 명령 실행 자동화
 - 사용자 컨텍스트 기반으로 GitHub 토큰/레포 권한을 활용
 
 ## 1. 명령 포맷 초안
 | 플랫폼 | 예시 명령 | 설명 |
 | --- | --- | --- |
-| Slack | `/codex run repo=https://github.com/org/app prompt="run tests" tags=staging` | Slash command 또는 봇 멘션 기반 |
+| Slack | `/codernetes run repo=https://github.com/org/app prompt="run tests" tags=staging` | Slash command 또는 봇 멘션 기반 |
 | Telegram | `run tests repo https://github.com/org/app tags staging` | 봇 DM/그룹 명령 |
 
 - 공통 파라미터: `prompt`, `repos`, `tags`, `target`(노드)

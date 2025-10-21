@@ -180,9 +180,9 @@ class ApiHandler:
                 "default_branch": "main",
             },
             {
-                "name": "codex-tasks",
-                "full_name": f"{user_id}/codex-tasks",
-                "url": "https://github.com/example/codex-tasks",
+                "name": "codernetes-tasks",
+                "full_name": f"{user_id}/codernetes-tasks",
+                "url": "https://github.com/example/codernetes-tasks",
                 "default_branch": "main",
             },
         ]

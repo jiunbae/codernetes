@@ -1,4 +1,4 @@
-"""Codex 마스터와 플랫폼 브릿지를 구동하는 진입점."""
+"""Codernetes 마스터와 플랫폼 브릿지를 구동하는 진입점."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Codex 마스터 플랫폼 브릿지")
+    parser = argparse.ArgumentParser(description="Codernetes 마스터 플랫폼 브릿지")
     parser.add_argument("--master-host", default=os.getenv("MASTER_HOST", "127.0.0.1"), help="마스터 서버 호스트")
     parser.add_argument("--master-port", type=int, default=int(os.getenv("MASTER_PORT", "8765")), help="마스터 서버 포트")
     parser.add_argument("--log-level", default=os.getenv("BRIDGE_LOG_LEVEL", "INFO"), help="로그 레벨")

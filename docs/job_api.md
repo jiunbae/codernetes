@@ -57,7 +57,7 @@
 ```jsonc
 {
   "status": "running",
-  "log_path": "/var/codex-job-uuid/output.log",
+  "log_path": "/var/codernetes-job-uuid/output.log",
   "result_summary": "optional summary",
   "error_message": null
 }

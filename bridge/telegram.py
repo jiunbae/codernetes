@@ -1,4 +1,4 @@
-"""Telegram <-> Codex 마스터 중계."""
+"""Telegram <-> Codernetes 마스터 중계."""
 
 from __future__ import annotations
 

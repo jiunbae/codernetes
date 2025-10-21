@@ -1,4 +1,4 @@
-"""Codex 마스터 서버에 접속하는 간단한 노드 클라이언트."""
+"""Codernetes 마스터 서버에 접속하는 간단한 노드 클라이언트."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class NodeContext:
     display_name: str | None
     tags: list[str]
     workdir_root: Path
-    codex_command: list[str]
+    codernetes_command: list[str]
     github_token: str | None
     preserve_workdir: bool
     cleanup_delay: float
@@ -155,16 +155,23 @@ async def _execute_job(websocket, context: NodeContext, payload: dict[str, objec
                 if subdirectory:
                     await _send_job_log(websocket, job_id, f"서브디렉터리 지정: {subdirectory}", context=context)
 
-        if context.codex_command:
-            await _send_job_log(websocket, job_id, "Codex 명령 실행 시작", context=context)
+        if context.codernetes_command:
+            await _send_job_log(websocket, job_id, "Codernetes 명령 실행 시작", context=context)
             env = os.environ.copy()
-            env["CODEX_PROMPT"] = prompt
-            env["CODEX_PROMPT_FILE"] = str(prompt_path)
-            success = await _run_command(websocket, job_id, context.codex_command, cwd=workdir, env=env, context=context)
+            env["CODERNETES_PROMPT"] = prompt
+            env["CODERNETES_PROMPT_FILE"] = str(prompt_path)
+            success = await _run_command(
+                websocket,
+                job_id,
+                context.codernetes_command,
+                cwd=workdir,
+                env=env,
+                context=context,
+            )
             if not success:
-                raise RuntimeError("codex command failed")
+                raise RuntimeError("codernetes command failed")
         else:
-            await _send_job_log(websocket, job_id, "Codex 명령이 정의되지 않아 실행을 건너뜁니다.", context=context)
+            await _send_job_log(websocket, job_id, "Codernetes 명령이 정의되지 않아 실행을 건너뜁니다.", context=context)
 
         await websocket.send(
             json.dumps(
@@ -341,7 +348,7 @@ async def _run_client(
     display_name: str | None,
     tags: list[str],
     workdir_root: Path,
-    codex_command: list[str],
+    codernetes_command: list[str],
     github_token: str | None,
     preserve_workdir: bool,
     cleanup_delay: float,
@@ -353,7 +360,7 @@ async def _run_client(
         display_name=display_name,
         tags=tags,
         workdir_root=workdir_root,
-        codex_command=codex_command,
+        codernetes_command=codernetes_command,
         github_token=github_token,
         preserve_workdir=preserve_workdir,
         cleanup_delay=cleanup_delay,
@@ -377,7 +384,7 @@ async def _run_client(
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Codex 노드 클라이언트")
+    parser = argparse.ArgumentParser(description="Codernetes 노드 클라이언트")
     parser.add_argument("--host", default="127.0.0.1", help="마스터 호스트")
     parser.add_argument("--port", type=int, default=8765, help="마스터 포트")
     parser.add_argument("--verbose", action="store_true", help="디버그 로그 출력")
@@ -389,13 +396,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--workdir-root",
-        default="/tmp/codex-jobs",
+        default="/tmp/codernetes-jobs",
         help="작업 디렉터리 루트 경로",
     )
     parser.add_argument(
-        "--codex-command",
+        "--codernetes-command",
+        dest="codernetes_command",
         default="",
-        help="Codex 실행 명령 (예: 'python -m codex run')",
+        help="Codernetes 실행 명령 (예: 'python -m codernetes run')",
     )
     parser.add_argument(
         "--github-token",
@@ -440,7 +448,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not github_token and args.github_token:
             github_token = args.github_token.strip()
 
-        codex_command = shlex.split(args.codex_command) if args.codex_command else []
+        codernetes_command = (
+            shlex.split(args.codernetes_command) if args.codernetes_command else []
+        )
         asyncio.run(
             _run_client(
                 args.host,
@@ -448,7 +458,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 display_name=args.display_name,
                 tags=tag_list,
                 workdir_root=Path(args.workdir_root).expanduser(),
-                codex_command=codex_command,
+                codernetes_command=codernetes_command,
                 github_token=github_token,
                 preserve_workdir=bool(args.preserve_workdir),
                 cleanup_delay=max(0.0, float(args.cleanup_delay)),

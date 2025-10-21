@@ -705,8 +705,8 @@ function App() {
       <main className="layout">
         <header className="page-header">
           <div>
-            <h1>Codex Master 제어판</h1>
-            <p>Slack/Telegram 브릿지와 원격 Codex 노드를 한 곳에서 관리하세요.</p>
+            <h1>Codernetes 마스터 제어판</h1>
+            <p>Slack/Telegram 브릿지와 원격 Codernetes 노드를 한 곳에서 관리하세요.</p>
           </div>
           <div className="header-meta">
             <div>
@@ -1091,7 +1091,7 @@ function App() {
             <h2>작업 실행</h2>
             <span className="badge info">{jobs.length}</span>
           </div>
-          <p className="description">Codex 노드에서 실행할 작업을 생성하고, 현재 상태를 모니터링합니다.</p>
+          <p className="description">Codernetes 노드에서 실행할 작업을 생성하고, 현재 상태를 모니터링합니다.</p>
           <form className="stacked-form" onSubmit={handleJobSubmit}>
             <label>
               <span>프롬프트</span>
@@ -1282,7 +1282,7 @@ function App() {
               {remotes.length}
             </span>
           </div>
-          <p className="description">Slack/Telegram 명령으로 제어할 Codex 실행 노드를 등록하고 상태를 표시합니다.</p>
+          <p className="description">Slack/Telegram 명령으로 제어할 Codernetes 실행 노드를 등록하고 상태를 표시합니다.</p>
           {remotesError && <div className="form-message error">{remotesError}</div>}
           <table id="remote-table" className="remote-table">
             <thead>
@@ -1414,7 +1414,7 @@ function App() {
           </form>
         </section>
 
-        <footer>Codex Master는 프로토타입 대시보드입니다. 실제 Slack/Telegram 연동은 브릿지 프로세스를 실행해야 적용됩니다.</footer>
+        <footer>Codernetes 마스터는 프로토타입 대시보드입니다. 실제 Slack/Telegram 연동은 브릿지 프로세스를 실행해야 적용됩니다.</footer>
       </main>
     </div>
   )

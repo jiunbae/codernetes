@@ -1,4 +1,4 @@
-"""Codex Master 도메인 모델."""
+"""Codernetes 마스터 도메인 모델."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class RepositorySpec:
 
 @dataclass(slots=True)
 class Job:
-    """Codex 작업 기본 모델."""
+    """Codernetes 작업 기본 모델."""
 
     job_id: str
     prompt: str

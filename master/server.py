@@ -1,4 +1,4 @@
-"""간단한 Codex 마스터 서버 구현."""
+"""간단한 Codernetes 마스터 서버 구현."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class Client:
 
 @dataclass
 class RemoteNode:
-    """원격 Codex 노드 메타데이터(목업)."""
+    """원격 Codernetes 노드 메타데이터(목업)."""
 
     uid: str
     name: str
@@ -295,7 +295,7 @@ class MasterServer:
         return None
 
     async def _send_job_assignment(self, client: Client, job: Job) -> None:
-        workdir = f"{self._config.get('job', {}).get('workdir_root', '/tmp/codex-jobs')}/{job.job_id}"
+        workdir = f"{self._config.get('job', {}).get('workdir_root', '/tmp/codernetes-jobs')}/{job.job_id}"
         message = {
             "type": "job.assign",
             "job_id": job.job_id,
@@ -341,7 +341,7 @@ class MasterServer:
                 {
                     "type": "welcome",
                     "client_id": client.uid,
-                    "message": "Connected to Codex master",
+                    "message": "Connected to Codernetes master",
                 }
             )
         )
@@ -681,7 +681,7 @@ class MasterServer:
                 "allowed_chats": os.getenv("TELEGRAM_ALLOWED_CHATS", ""),
             },
             "job": {
-                "workdir_root": os.getenv("JOB_WORKDIR_ROOT", "/tmp/codex-jobs"),
+                "workdir_root": os.getenv("JOB_WORKDIR_ROOT", "/tmp/codernetes-jobs"),
             },
             "notes": os.getenv("MASTER_NOTES", ""),
         }
@@ -695,7 +695,7 @@ class MasterServer:
         return [
             RemoteNode(
                 uid=str(uuid.uuid4()),
-                name="staging-codex",
+                name="staging-codernetes",
                 host="10.0.10.4",
                 port=9000,
                 tags=list(tags) or ["staging"],
@@ -761,7 +761,7 @@ class MasterServer:
         telegram_cfg["allowed_chats_list"] = self._split_csv(telegram_cfg["allowed_chats"])
 
         job_cfg = dict(self._config.get("job", {}))
-        job_cfg.setdefault("workdir_root", "/tmp/codex-jobs")
+        job_cfg.setdefault("workdir_root", "/tmp/codernetes-jobs")
 
         payload = {
             "master": master_cfg,
@@ -811,7 +811,7 @@ class MasterServer:
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <title>Codex Master Control</title>
+    <title>Codernetes Master Control</title>
     <style>
       body {
         margin: 0;
@@ -940,7 +940,7 @@ class MasterServer:
         if isinstance(job_cfg, dict):
             target = self._config.setdefault("job", {})
             if "workdir_root" in job_cfg:
-                target["workdir_root"] = str(job_cfg["workdir_root"]).strip() or "/tmp/codex-jobs"
+                target["workdir_root"] = str(job_cfg["workdir_root"]).strip() or "/tmp/codernetes-jobs"
 
         if "notes" in data:
             self._config["notes"] = str(data["notes"]).strip()
@@ -1100,7 +1100,7 @@ def _configure_logging(verbose: bool) -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Codex master server")
+    parser = argparse.ArgumentParser(description="Codernetes master server")
     parser.add_argument("--host", default="0.0.0.0", help="바인딩할 호스트 주소")
     parser.add_argument("--port", type=int, default=8765, help="바인딩할 포트")
     parser.add_argument("--verbose", action="store_true", help="디버그 로그 활성화")
@@ -1108,7 +1108,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--http-port", type=int, default=8080, help="웹 UI 포트")
     parser.add_argument("--health-interval", type=float, default=15.0, help="헬스 체크 주기(초)")
     parser.add_argument("--health-timeout", type=float, default=5.0, help="헬스 체크 타임아웃(초)")
-    parser.add_argument("--db-path", default="var/codex-master.db", help="작업/노드 상태를 저장할 SQLite 경로")
+    parser.add_argument("--db-path", default="var/codernetes.db", help="작업/노드 상태를 저장할 SQLite 경로")
     return parser.parse_args(argv)
 
 

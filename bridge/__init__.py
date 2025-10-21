@@ -1,4 +1,4 @@
-"""Codex 마스터와 외부 메시지 플랫폼을 연결하는 브릿지 모듈."""
+"""Codernetes 마스터와 외부 메시지 플랫폼을 연결하는 브릿지 모듈."""
 
 from .base import MasterBridge, run_bridges
 from .run import build_bridges, main

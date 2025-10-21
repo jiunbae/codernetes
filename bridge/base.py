@@ -20,7 +20,7 @@ class MasterBridgeError(RuntimeError):
 
 
 class MasterBridge(abc.ABC):
-    """Codex 마스터 서버와 플랫폼을 중계하는 추상 베이스."""
+    """Codernetes 마스터 서버와 플랫폼을 중계하는 추상 베이스."""
 
     reconnect_delay: float = 5.0
 

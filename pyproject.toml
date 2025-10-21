@@ -1,7 +1,7 @@
 [project]
-name = "codex-super-client"
+name = "codernetes-super-client"
 version = "0.1.0"
-description = "소규모 팀을 위한 Codex 마스터/노드 메시지 허브 프로토타입"
+description = "소규모 팀을 위한 Codernetes 마스터/노드 메시지 허브 프로토타입"
 authors = [{name = "June"}]
 readme = "README.md"
 requires-python = ">=3.11,<4"
